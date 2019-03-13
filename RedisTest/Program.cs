@@ -39,9 +39,12 @@ namespace RedisTest
             //Test SET
             var itemsSet = program.AddOrGetExisting(new CacheItem("GenericKeyTest2", customers) { }, new CacheItemPolicy() { AbsoluteExpiration = DateTimeOffset.Now, SlidingExpiration = new TimeSpan() });
 
+            List<Customer> customerList = (List<Customer>)itemsSet.Value;
+
             //Test GET
             var itemsGet = program.AddOrGetExisting(new CacheItem("GenericKeyTest2", null) { }, new CacheItemPolicy() { AbsoluteExpiration = DateTimeOffset.Now, SlidingExpiration = new TimeSpan() });
-            List<Customer> customersRetrieved = ((List<object>)itemsGet.Value).Cast<Customer>().ToList();
+            List<Customer> customersRetrieved = (List<Customer>)itemsGet.Value;
+            //List<Customer> customersRetrieved = ((List<object>)itemsGet.Value).Cast<Customer>().ToList();
             //List<Customer> retrievedList = (List<Customer>)item.Value;
         }
 
@@ -218,7 +221,7 @@ namespace RedisTest
 
         public CacheItem AddOrGetExisting(CacheItem item, CacheItemPolicy policy)
         {
-            var cache = RedisConnectorHelper.Connection.GetDatabase();
+            IDatabase cache = RedisConnectorHelper.Connection.GetDatabase();
 
             //Determine if a Type is given for the Value in the CacheItem
             //string myType = "RedisTest.Customer";
@@ -237,9 +240,11 @@ namespace RedisTest
                         {
                             string itemType = cache.StringGet(item.Key + KEY_STATE_SUFFIX);
 
-                            var list = cache.ListRange(item.Key);
+                            RedisValue[] list = cache.ListRange(item.Key);
                             //List<Customer> customers = new List<Customer>();
-                            var customerObjects = cache.ListRange(item.Key).Select(x => JsonConvert.DeserializeObject(x, Type.GetType(itemType))).ToList();
+                            List<object> customerObjects = cache.ListRange(item.Key).Select(x => JsonConvert.DeserializeObject(x, Type.GetType(itemType))).ToList();
+                            var redisListConverted = ConvertList(customerObjects, Type.GetType(itemType));
+
                             /*
                             foreach (object customerObject in customerObjects)
                             {
@@ -247,7 +252,7 @@ namespace RedisTest
                             }
                             */
                             //testData.Cast<List<object>>().Select(x => new TestClass() { AAA = (string)x[0], BBB = (string)x[1], CCC = (string)x[2] }).ToList()
-                            return new CacheItem(item.Key, customerObjects);
+                            return new CacheItem(item.Key, redisListConverted); //customerObjects
                             //return new CacheItem(item.Key, cache.ListRange(item.Key).Select(x => JsonConvert.DeserializeObject(x, Type.GetType(myType))).ToList());
                             //return new CacheItem(item.Key, cache.ListRange(item.Key).Select(x => JsonConvert.DeserializeObject(x, Type.GetType(itemValueType.GetGenericArguments()[0].UnderlyingSystemType.FullName))).ToList());
                         }
@@ -264,8 +269,9 @@ namespace RedisTest
                             {
                                 if (string.IsNullOrEmpty(itemType))
                                 {
-                                    itemType = value.GetType().FullName;
-                                }
+                                    //itemType = value.GetType().FullName;
+                                    itemType = value.GetType().AssemblyQualifiedName;
+                        }
 
                                 redisValueList.Add((RedisValue)JsonConvert.SerializeObject(value));
                             }
@@ -280,6 +286,38 @@ namespace RedisTest
             //}
 
             return item;
+        }
+
+        /*
+        public static object ConvertList(List<object> value, Type type)
+        {
+            //var containedType = type.GenericTypeArguments.First();
+            //return value.Select(item => Convert.ChangeType(item, containedType)).ToList();
+            return value.Select(item => Convert.ChangeType(item, type)).ToList();
+        }
+        */
+
+        public static object ConvertList(List<object> items, Type type, bool performConversion = false)
+        {
+            var containedType = type; //type.GenericTypeArguments.First();
+            var enumerableType = typeof(System.Linq.Enumerable);
+            var castMethod = enumerableType.GetMethod(nameof(System.Linq.Enumerable.Cast)).MakeGenericMethod(containedType);
+            var toListMethod = enumerableType.GetMethod(nameof(System.Linq.Enumerable.ToList)).MakeGenericMethod(containedType);
+
+            IEnumerable<object> itemsToCast;
+
+            if (performConversion)
+            {
+                itemsToCast = items.Select(item => Convert.ChangeType(item, containedType));
+            }
+            else
+            {
+                itemsToCast = items;
+            }
+
+            var castedItems = castMethod.Invoke(null, new[] { itemsToCast });
+
+            return toListMethod.Invoke(null, new[] { castedItems });
         }
     }
 }
