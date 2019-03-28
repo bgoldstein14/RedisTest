@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Runtime.Caching;
 using System.Text;
@@ -16,11 +17,53 @@ namespace RedisTest
         private const string KEY_STATE_SUFFIX = "_STATE";
         static void Main(string[] args)
         {
-            var program = new Program();
+            Program program = new Program();
             //ProcessBigData(program);
             //ProcessListData(program);
             //HashTest();
-            TestGenericCall(program);
+            //TestGenericCall(program);
+            //TestListAsObject(program);
+            RemoveKeys(program);
+        }
+
+        public static void RemoveKeys(Program program)
+        {
+            //var cache = RedisConnectorHelper.Connection.GetDatabase();
+            //cache.KeyDelete("Generic*");
+            //EndPoint[] endpoints = RedisConnectorHelper.Connection.GetEndPoints(true);
+            IServer server = RedisConnectorHelper.Connection.GetServer("d-portsolapp01:6379");
+
+            // show all keys in database 0 that include "foo" in their name
+            foreach (RedisKey key in server.Keys(pattern: "GenericKeyTest2*"))
+            {
+                Console.WriteLine(key);
+            }
+
+            Console.ReadLine();
+            // completely wipe ALL keys from database 0
+            // server.FlushDatabase();
+        }
+
+        public static void TestListAsObject(Program program)
+        {
+            Customer customer1 = new Customer() { ID = 1, Name = "Benjamin" };
+            Customer customer2 = new Customer() { ID = 2, Name = "Alfred" };
+            Customer customer3 = new Customer() { ID = 3, Name = "Nancy" };
+            Customer customer4 = new Customer() { ID = 4, Name = "Jacob" };
+
+            IEnumerable<Customer> customers = new List<Customer>();
+            ((List<Customer>)customers).Add(customer1);
+            ((List<Customer>)customers).Add(customer2);
+            ((List<Customer>)customers).Add(customer3);
+            ((List<Customer>)customers).Add(customer4);
+
+            //Test SET
+            IDatabase cache = RedisConnectorHelper.Connection.GetDatabase();
+            cache.StringSet("GenericKeyTest3", JsonConvert.SerializeObject(customers));
+
+            //Test GET
+            RedisValue cacheString = cache.StringGet("GenericKeyTest3");
+            IEnumerable<Customer> customersRetrieved = JsonConvert.DeserializeObject<IEnumerable<Customer>>(cacheString);
         }
 
         public static void TestGenericCall(Program program)
@@ -37,12 +80,12 @@ namespace RedisTest
             ((List<Customer>)customers).Add(customer4);
 
             //Test SET
-            var itemsSet = program.AddOrGetExisting(new CacheItem("GenericKeyTest2", customers) { }, new CacheItemPolicy() { AbsoluteExpiration = DateTimeOffset.Now, SlidingExpiration = new TimeSpan() });
+            CacheItem itemsSet = program.AddOrGetExisting(new CacheItem("GenericKeyTest2", customers) { }, new CacheItemPolicy() { AbsoluteExpiration = DateTimeOffset.Now, SlidingExpiration = new TimeSpan() });
 
             List<Customer> customerList = (List<Customer>)itemsSet.Value;
 
             //Test GET
-            var itemsGet = program.AddOrGetExisting(new CacheItem("GenericKeyTest2", null) { }, new CacheItemPolicy() { AbsoluteExpiration = DateTimeOffset.Now, SlidingExpiration = new TimeSpan() });
+            CacheItem itemsGet = program.AddOrGetExisting(new CacheItem("GenericKeyTest2", null) { }, new CacheItemPolicy() { AbsoluteExpiration = DateTimeOffset.Now, SlidingExpiration = new TimeSpan() });
             List<Customer> customersRetrieved = (List<Customer>)itemsGet.Value;
             //List<Customer> customersRetrieved = ((List<object>)itemsGet.Value).Cast<Customer>().ToList();
             //List<Customer> retrievedList = (List<Customer>)item.Value;
@@ -54,10 +97,10 @@ namespace RedisTest
             program.SaveBigData();
 
             Console.WriteLine("Reading data from cache");
-            program.ReadBigData();
+            //program.ReadBigData();
 
             Console.WriteLine("Removing big data in cache");
-            program.RemoveBigData();
+            //program.RemoveBigData();
 
             Console.WriteLine("DONE");
 
@@ -82,32 +125,32 @@ namespace RedisTest
 
         public void ReadBigData()
         {
-            var cache = RedisConnectorHelper.Connection.GetDatabase();
-            var devicesCount = 10000;
+            IDatabase cache = RedisConnectorHelper.Connection.GetDatabase();
+            int devicesCount = 10000;
             for (int i = 0; i < devicesCount; i++)
             {
-                var value = cache.StringGet($"Device_Status:{i}");
+                RedisValue value = cache.StringGet($"Device_Status:{i}");
                 Console.WriteLine($"Valor={value}");
             }
         }
 
         public void SaveBigData()
         {
-            var devicesCount = 10000;
-            var rnd = new Random();
-            var cache = RedisConnectorHelper.Connection.GetDatabase();
+            int devicesCount = 10000;
+            Random rnd = new Random();
+            IDatabase cache = RedisConnectorHelper.Connection.GetDatabase();
 
             for (int i = 1; i < devicesCount; i++)
             {
-                var value = rnd.Next(0, 10000);
+                int value = rnd.Next(0, 10000);
                 cache.StringSet($"Device_Status:{i}", value);
             }
         }
 
         public void RemoveBigData()
         {
-            var devicesCount = 10000;
-            var cache = RedisConnectorHelper.Connection.GetDatabase();
+            int devicesCount = 10000;
+            IDatabase cache = RedisConnectorHelper.Connection.GetDatabase();
 
             for (int i = 1; i < devicesCount; i++)
             {
@@ -117,7 +160,7 @@ namespace RedisTest
 
         public void SaveListData()
         {
-            var cache = RedisConnectorHelper.Connection.GetDatabase();
+            IDatabase cache = RedisConnectorHelper.Connection.GetDatabase();
 
             Customer customer1 = new Customer() { ID = 1, Name = "Benjamin" };
             Customer customer2 = new Customer() { ID = 2, Name = "Alfred" };
@@ -129,7 +172,7 @@ namespace RedisTest
             //cache.ListRightPush("Customers", customers.Select(x => (RedisValue)x.ToString()).ToArray());
             //cache.ListRightPush("Customers", customers.Select(x => (RedisValue)JsonConvert.SerializeObject(x)).ToArray());
             
-            foreach (var customer in customers)
+            foreach (Customer customer in customers)
             {
                 cache.ListRightPush("Customers", JsonConvert.SerializeObject(customer), When.Always, CommandFlags.None);
             }
@@ -138,7 +181,7 @@ namespace RedisTest
 
         public void ReadListData()
         {
-            var cache = RedisConnectorHelper.Connection.GetDatabase();
+            IDatabase cache = RedisConnectorHelper.Connection.GetDatabase();
             RedisValue[] customers = cache.ListRange("Customers");
 
             foreach (RedisValue customer in customers)
@@ -157,15 +200,15 @@ namespace RedisTest
 
         public void RemoveListData()
         {
-            var cache = RedisConnectorHelper.Connection.GetDatabase();
+            IDatabase cache = RedisConnectorHelper.Connection.GetDatabase();
             cache.KeyDelete($"Customers");
             cache.KeyDelete($"CustomersSorted");
         }
 
         public static void HashTest()
         {
-            var redis = RedisConnectorHelper.Connection.GetDatabase();
-            var hashKey = "hashKey";
+            IDatabase redis = RedisConnectorHelper.Connection.GetDatabase();
+            string hashKey = "hashKey";
 
             HashEntry[] redisBookHash = {
                 new HashEntry("title", "Redis for .NET Developers"),
@@ -177,13 +220,13 @@ namespace RedisTest
 
             if (redis.HashExists(hashKey, "year"))
             {
-                var year = redis.HashGet(hashKey, "year"); //year is 2016
+                RedisValue year = redis.HashGet(hashKey, "year"); //year is 2016
             }
 
-            var allHash = redis.HashGetAll(hashKey);
+            HashEntry[] allHash = redis.HashGetAll(hashKey);
 
             //get all the items
-            foreach (var item in allHash)
+            foreach (HashEntry item in allHash)
             {
                 //output 
                 //key: title, value: Redis for .NET Developers
@@ -193,26 +236,26 @@ namespace RedisTest
             }
 
             //get all the values
-            var values = redis.HashValues(hashKey);
+            RedisValue[] values = redis.HashValues(hashKey);
 
-            foreach (var val in values)
+            foreach (RedisValue val in values)
             {
                 Console.WriteLine(val); //result = Redis for .NET Developers, 2016, Taswar Bhatti
             }
 
             //get all the keys
-            var keys = redis.HashKeys(hashKey);
+            RedisValue[] keys = redis.HashKeys(hashKey);
 
-            foreach (var k in keys)
+            foreach (RedisValue k in keys)
             {
                 Console.WriteLine(k); //result = title, year, author
             }
 
-            var len = redis.HashLength(hashKey);  //result of len is 3
+            long len = redis.HashLength(hashKey);  //result of len is 3
 
             if (redis.HashExists(hashKey, "year"))
             {
-                var year = redis.HashIncrement(hashKey, "year", 1); //year now becomes 2017
+                long year = redis.HashIncrement(hashKey, "year", 1); //year now becomes 2017
                 //var year2 = redis.HashDecrement(hashKey, "year", 1.5); //year now becomes 2015.5
             }
 
@@ -243,7 +286,7 @@ namespace RedisTest
                             RedisValue[] list = cache.ListRange(item.Key);
                             //List<Customer> customers = new List<Customer>();
                             List<object> customerObjects = cache.ListRange(item.Key).Select(x => JsonConvert.DeserializeObject(x, Type.GetType(itemType))).ToList();
-                            var redisListConverted = ConvertList(customerObjects, Type.GetType(itemType));
+                            object redisListConverted = ConvertList(customerObjects, Type.GetType(itemType));
 
                             /*
                             foreach (object customerObject in customerObjects)
@@ -265,7 +308,7 @@ namespace RedisTest
                             List<RedisValue> redisValueList = new List<RedisValue>();
                             string itemType = String.Empty;
 
-                            foreach (var value in (IEnumerable)item.Value)
+                            foreach (object value in (IEnumerable)item.Value)
                             {
                                 if (string.IsNullOrEmpty(itemType))
                                 {
@@ -299,10 +342,10 @@ namespace RedisTest
 
         public static object ConvertList(List<object> items, Type type, bool performConversion = false)
         {
-            var containedType = type; //type.GenericTypeArguments.First();
-            var enumerableType = typeof(System.Linq.Enumerable);
-            var castMethod = enumerableType.GetMethod(nameof(System.Linq.Enumerable.Cast)).MakeGenericMethod(containedType);
-            var toListMethod = enumerableType.GetMethod(nameof(System.Linq.Enumerable.ToList)).MakeGenericMethod(containedType);
+            Type containedType = type; //type.GenericTypeArguments.First();
+            Type enumerableType = typeof(System.Linq.Enumerable);
+            MethodInfo castMethod = enumerableType.GetMethod(nameof(System.Linq.Enumerable.Cast)).MakeGenericMethod(containedType);
+            MethodInfo toListMethod = enumerableType.GetMethod(nameof(System.Linq.Enumerable.ToList)).MakeGenericMethod(containedType);
 
             IEnumerable<object> itemsToCast;
 
@@ -315,7 +358,7 @@ namespace RedisTest
                 itemsToCast = items;
             }
 
-            var castedItems = castMethod.Invoke(null, new[] { itemsToCast });
+            object castedItems = castMethod.Invoke(null, new[] { itemsToCast });
 
             return toListMethod.Invoke(null, new[] { castedItems });
         }
